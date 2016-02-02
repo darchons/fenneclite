@@ -3,16 +3,84 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 package org.mozilla.fenneclite;
 
+import org.mozilla.gecko.GeckoAppShell;
+import org.mozilla.gecko.GeckoThread;
+import org.mozilla.gecko.util.ThreadUtils;
+
+import android.content.SharedPreferences;
+import android.content.res.AssetManager;
 import android.os.Bundle;
-import android.support.design.widget.FloatingActionButton;
-import android.support.design.widget.Snackbar;
+import android.os.Handler;
+import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.ViewGroup;
 
-public class Browser extends AppCompatActivity {
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
+public class Browser extends AppCompatActivity implements Handler.Callback {
+
+    private static final String APPOMNI_JAR = "appomni.jar";
+    private static final String PREF_APPOMNI_VERSION = "appomni_version";
+
+    private static final int MSG_SETUP_GECKOVIEW = 1;
+
+    /* package */ final Handler handler = new Handler(this);
+
+    /* package */ void unpackOmniJar() {
+        final AssetManager am = getAssets();
+        InputStream jarin = null;
+        FileOutputStream jarout = null;
+        try {
+            try {
+                int bytesRead;
+                final byte[] buffer = new byte[0x1000];
+                jarin = am.open(APPOMNI_JAR);
+                jarout = openFileOutput(APPOMNI_JAR, MODE_PRIVATE);
+                while ((bytesRead = jarin.read(buffer)) >= 0) {
+                    jarout.write(buffer, 0, bytesRead);
+                }
+            } finally {
+                if (jarin != null) {
+                    jarin.close();
+                }
+                if (jarout != null) {
+                    jarout.close();
+                }
+            }
+        } catch (IOException e) {
+            throw new UnsupportedOperationException("cannot unpack omnijar", e);
+        }
+    }
+
+    private void setupGeckoView() {
+        // Launch Gecko and inflate GeckoView.
+        GeckoAppShell.setApplicationContext(getApplicationContext());
+
+        final String appomni_path = getFileStreamPath(APPOMNI_JAR).getAbsolutePath();
+        final String args = "-appomni " + appomni_path;
+        if (GeckoThread.ensureInit(args, null)) {
+            GeckoThread.launch();
+        }
+
+        final ViewGroup root = (ViewGroup) findViewById(R.id.contentRoot);
+        getLayoutInflater().inflate(
+                R.layout.content_browser, root, /* attachToRoot */ true);
+    }
+
+    @Override
+    public boolean handleMessage(final Message msg) {
+        switch (msg.what) {
+            case MSG_SETUP_GECKOVIEW:
+                setupGeckoView();
+                return true;
+        }
+        return false;
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -21,14 +89,21 @@ public class Browser extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
-        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
-            }
-        });
+        // If we don't have an unpacked omnijar, we have to unpack it on a background thread first
+        // before passing its path to Gecko.
+        final SharedPreferences prefs = getPreferences(MODE_PRIVATE);
+        if (!BuildConfig.DEBUG && prefs.getInt(PREF_APPOMNI_VERSION, -1) != BuildConfig.VERSION_CODE) {
+            setupGeckoView();
+        } else {
+            ThreadUtils.postToBackgroundThread(new Runnable() {
+                @Override
+                public void run() {
+                    unpackOmniJar();
+                    prefs.edit().putInt(PREF_APPOMNI_VERSION, BuildConfig.VERSION_CODE).apply();
+                    handler.sendEmptyMessage(MSG_SETUP_GECKOVIEW);
+                }
+            });
+        }
     }
 
     @Override

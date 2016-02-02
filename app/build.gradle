@@ -20,8 +20,20 @@ android {
 }
 
 dependencies {
-    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile fileTree(include: ['*.jar'], dir: 'libs')
     testCompile 'junit:junit:4.12'
     compile 'com.android.support:appcompat-v7:23.1.1'
     compile 'com.android.support:design:23.1.1'
+    compile 'org.mozilla:geckoview:20160202030232'
+}
+
+// For each build variant, set up a task that packages the omnijar files into appomni.jar.
+android.applicationVariants.all{ variant ->
+    def taskName = "make${variant.name}Omnijar"
+    task "${taskName}" (type: Zip) {
+        from 'src/main/appomni'
+        archiveName = 'appomni.jar'
+        destinationDir = variant.mergeAssets.outputDir
+    }
+    variant.mergeAssets.dependsOn "${taskName}"
 }

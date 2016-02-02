@@ -15,6 +15,13 @@ buildscript {
 allprojects {
     repositories {
         jcenter()
+        ivy {
+            url 'https://archive.mozilla.org/pub/mobile/nightly/2016/02/2016-02-02-03-02-32-mozilla-central-android-api-15/'
+            layout 'pattern', {
+                artifact '[artifact]-[revision].[ext]'
+                ivy 'ivy-[module]-[revision].xml'
+            }
+        }
     }
 }
 
